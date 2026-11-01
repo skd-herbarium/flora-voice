@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>植物相調査 音声野帳</title>
+<style>
+:root{--bg:#f6f7f2;--fg:#1d2a1f;--card:#fff;--line:#d6dccf;--pri:#2e7d4f;--prifg:#fff;--warn:#b45309;--mut:#667366;--rec:#c62828;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121a14;--fg:#e6efe6;--card:#1b261e;--line:#2f4034;--pri:#4caf78;--prifg:#08140c;--warn:#f0a35a;--mut:#9bb09f;--rec:#ef5350}}
+:root[data-theme="dark"]{--bg:#121a14;--fg:#e6efe6;--card:#1b261e;--line:#2f4034;--pri:#4caf78;--prifg:#08140c;--warn:#f0a35a;--mut:#9bb09f;--rec:#ef5350}
+*{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,"Noto Sans JP",sans-serif}
+main{max-width:640px;margin:0 auto;padding:12px}
+h1{font-size:18px;margin:4px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:10px 14px;min-height:44px}
+button.pri{background:var(--pri);color:var(--prifg)}
+.mic{width:100%;min-height:84px;font-size:22px;font-weight:700;background:var(--pri);color:var(--prifg);border:none;border-radius:16px}
+.mic.on{background:var(--rec);color:#fff}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text]{flex:1;min-width:0;font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);min-height:44px}
+.muted{color:var(--mut);font-size:13px}
+.cand{display:block;width:100%;text-align:left;margin-top:8px}
+.cand b{font-size:18px}
+.cand small{color:var(--mut)}
+.rec{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.rec:first-child{border-top:none}
+.rec .nm{font-weight:700}
+.tag{font-size:12px;color:var(--warn)}
+textarea{width:100%;height:110px;font:12px monospace;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px}
+#toast{min-height:24px;font-weight:700}
+</style>
+</head>
+<body>
+<main>
+<h1>🌿 植物相調査 音声野帳</h1>
+
+<div class="card">
+  <button id="mic" class="mic">🎤 音声入力を開始</button>
+  <div id="toast" aria-live="polite"></div>
+  <div class="muted" id="heard">認識結果: —</div>
+  <div class="row muted" style="margin-top:8px"><label><input type="checkbox" id="sil" checked> 無音で区切る</label><label>無音 <b id="silLabel">0.5</b>秒 <input type="range" id="silv" min="0.2" max="2" step="0.1" value="0.5"></label></div>
+</div>
+
+<div class="card" id="candBox" hidden>
+  <div><b>候補から選んでください</b> <span class="muted" id="candRaw"></span></div>
+  <div id="cands"></div>
+  <button id="outList" class="cand">リスト外として記録(認識結果のまま)</button>
+  <button id="cancel" class="cand">破棄</button>
+</div>
+
+<div class="card">
+  <div class="row">
+    <input type="text" id="txt" placeholder="手入力・キーボードの🎤でも可">
+    <button id="send" class="pri">照合</button>
+  </div>
+  <div class="muted" style="margin-top:6px">連続入力: 種名の間に無音(上で長さを設定)を置くと区切れます。「ヤマザクラ つぎ コナラ」のように、種名の間に「つぎ」を入れるか、間を空けず続けて話せます。「取り消し」で直前の記録を削除。</div>
+</div>
+
+<div class="card">
+  <div class="row" style="justify-content:space-between">
+    <b>記録 <span id="cnt"></span></b>
+    <span class="row"><button id="undo">1件取消</button><button id="clr">全消去</button></span>
+  </div>
+  <div id="list"></div>
+</div>
+
+<div class="card">
+  <b>出力(Excelに貼り付け)</b>
+  <div class="row" style="margin:8px 0"><button id="exp" class="pri">表を作成してコピー</button></div>
+  <textarea id="out" readonly placeholder="ここにタブ区切りの表が出ます"></textarea>
+</div>
+
+<div class="card">
+  <b>植物リスト</b> <span class="muted" id="lcnt"></span>
+  <div class="muted">目録のExcel/CSVを読み込みます(列: 種和名・科名・学名)。未読込時はサンプル5種を使用。</div>
+  <div class="row" style="margin-top:8px"><input type="file" id="file" accept=".xlsx,.xls,.csv"></div>
+  <label class="row muted" style="margin-top:8px"><input type="checkbox" id="speak" checked> 確定時に名前を読み上げる</label>
+  <div class="muted" id="aliasInfo"></div>
+</div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+const SAMPLE=[["ヒメスギラン","ヒカゲノカズラ","Huperzia miyoshiana"],["コスギラン","ヒカゲノカズラ","Huperzia selago"],["トウゲシバ（広義）","ヒカゲノカズラ","Huperzia serrata"],["オニトウゲシバ","ヒカゲノカズラ","Huperzia serrata var. longipetiolata"],["ホソバトウゲシバ","ヒカゲノカズラ","Huperzia serrata var. serrata"]];
+let species=SAMPLE.map(([n,f,s])=>({n,f,s}));
+let records=[],aliases={},pending=null,lastPos=null,recog=null,listening=false;
+const $=id=>document.getElementById(id);
+const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+records=store.get("fv_rec",[]);aliases=store.get("fv_alias",{});
+const saved=store.get("fv_species",null);if(saved&&saved.length)species=saved;
+
+// ---- 正規化・照合 ----
+function norm(s){return String(s||"").replace(/[（(].*?[）)]/g,"").replace(/[\s　・･.,、。]/g,"").replace(/[\u30A1-\u30F6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).toLowerCase()}
+function lev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,j)=>j);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
+function score(q,k){if(!q||!k)return 0;let s=1-lev(q,k)/Math.max(q.length,k.length);if(q.length>=3&&(k.startsWith(q)||q.startsWith(k)))s=Math.max(s,.8);return s}
+function toKata(s){return String(s||"").replace(/[\u3041-\u3096]/g,c=>String.fromCharCode(c.charCodeAt(0)+0x60))}
+let kmap=new Map(),maxL=2;
+function splitAlts(alts){
+  const parts=alts.map(a=>a.split(/つぎ|ツギ|次|[、。,，\s\u3000]+/).map(s=>s.trim()).filter(Boolean));
+  const n=parts[0].length,ok=parts.every(p=>p.length===n);
+  return parts[0].map((_,i)=>ok?parts.map(p=>p[i]):[parts[0][i]]);
+}
+function segment(q){
+  const n=q.length;if(n<4)return null;
+  const best=Array(n+1).fill(null);best[0]=[];
+  for(let i=0;i<n;i++){if(!best[i])continue;for(let l=2;l<=Math.min(maxL,n-i);l++){const sp=kmap.get(q.substr(i,l));if(sp){const c=best[i].concat([sp]);if(!best[i+l]||c.length<best[i+l].length)best[i+l]=c}}}
+  return best[n]&&best[n].length>=2?best[n]:null;
+}
+function rebuild(){species.forEach(x=>x.k=norm(x.n));
+  kmap=new Map();maxL=2;species.forEach(x=>{if(x.k&&!kmap.has(x.k)){kmap.set(x.k,x);maxL=Math.max(maxL,x.k.length)}});
+  for(const a in aliases){const sp=species.find(s=>s.n===aliases[a]);if(sp&&!kmap.has(a)){kmap.set(a,sp);maxL=Math.max(maxL,a.length)}}$("lcnt").textContent="("+species.length+"種)";$("aliasInfo").textContent="学習済み読み替え: "+Object.keys(aliases).length+"件"}
+function match(alts){
+  const qs=alts.map(norm).filter(Boolean);
+  for(const q of qs){if(aliases[q]){const x=species.find(s=>s.n===aliases[q]);if(x)return{exact:x,list:[]}}}
+  for(const q of qs){const x=species.filter(s=>s.k===q);if(x.length===1)return{exact:x[0],list:[]}}
+  const best=new Map();
+  for(const sp of species){let sc=0;for(const q of qs)sc=Math.max(sc,score(q,sp.k));if(sc>=.4)best.set(sp,sc)}
+  return{exact:null,list:[...best].sort((a,b)=>b[1]-a[1]).slice(0,5)}
+}
+
+// ---- 記録 ----
+function toast(t,warn){const e=$("toast");e.textContent=t;e.style.color=warn?"var(--warn)":"var(--pri)"}
+function say(t){if($("speak").checked&&window.speechSynthesis){try{const u=new SpeechSynthesisUtterance(t);u.lang="ja-JP";speechSynthesis.speak(u)}catch(e){}}}
+function getPos(cb){if(!navigator.geolocation)return cb(null);navigator.geolocation.getCurrentPosition(p=>cb({lat:p.coords.latitude,lng:p.coords.longitude}),()=>cb(lastPos),{enableHighAccuracy:true,timeout:4000,maximumAge:60000})}
+function add(sp,raw,out,quiet){
+  const ex=records.find(r=>!r.out&&!out&&r.n===sp.n);
+  if(ex){ex.c++;save();render();if(!quiet){toast("既出: "+sp.n+"(×"+ex.c+")",true);say(sp.n+"、既出")}return}
+  const r={t:new Date().toISOString(),n:sp.n,f:sp.f||"",s:sp.s||"",c:1,raw,out:!!out,lat:"",lng:""};
+  records.unshift(r);save();render();if(!quiet){toast((out?"リスト外: ":"記録: ")+sp.n,out);say(sp.n+(out?"、リスト外":"、登録"))}
+  getPos(p=>{if(p){r.lat=p.lat.toFixed(6);r.lng=p.lng.toFixed(6);lastPos=p;save();render()}});
+}
+function save(){store.set("fv_rec",records)}
+function handle(alts){
+  alts=alts.filter(Boolean);if(!alts.length)return;
+  $("heard").textContent="認識結果: "+alts.map(toKata).join(" / ");
+  if(/^(とりけし|取り消し|取消|取りけし)$/.test(alts[0].replace(/\s/g,""))||norm(alts[0])==="とりけし"){const r=records.shift();save();render();toast(r?"取消: "+r.n:"記録なし",true);say("取り消し");return}
+  const names=[],before=queue.length;
+  splitAlts(alts).forEach(seg=>{
+    const m=match(seg);
+    if(m.exact){names.push(m.exact);return}
+    const sg=segment(norm(seg[0]));
+    if(sg){sg.forEach(x=>names.push(x));return}
+    queue.push({alts:seg,raw:toKata(seg[0]),list:m.list});
+  });
+  const multi=names.length>1;
+  names.forEach(sp=>add(sp,sp.n,false,multi));
+  if(multi){toast("記録: "+names.map(x=>x.n).join("、"));say(names.map(x=>x.n).join("、")+"、登録")}
+  if(queue.length>before){if(!pending)showNext();toast((names.length?names.length+"件記録。":"")+"未確定"+(queue.length-before)+"件:候補から選択してください",true);if(!names.length)say("候補を確認してください")}
+}
+function showPending(list){
+  $("candBox").hidden=false;$("candRaw").textContent="「"+pending.raw+"」"+(queue.length>1?" (残り"+queue.length+"件)":"");
+  const c=$("cands");c.innerHTML="";
+  list.forEach(([sp,sc])=>{const b=document.createElement("button");b.className="cand";b.innerHTML="<b></b> <small></small>";b.firstChild.textContent=sp.n;b.lastChild.textContent=sp.f+"  一致度"+Math.round(sc*100)+"%";
+    b.onclick=()=>{aliases[norm(pending.raw)]=sp.n;store.set("fv_alias",aliases);rebuild();add(sp,pending.raw);advance()};c.appendChild(b)});
+}
+let queue=[];
+function hidePending(){pending=null;$("candBox").hidden=true}
+function showNext(){if(queue.length){pending=queue[0];showPending(pending.list)}else hidePending()}
+function advance(){queue.shift();showNext()}
+$("outList").onclick=()=>{if(pending){add({n:pending.raw,f:"",s:""},pending.raw,true);advance()}};
+$("cancel").onclick=()=>{advance();toast("破棄しました")};
+$("send").onclick=()=>{const v=$("txt").value.trim();if(v){handle([v]);$("txt").value=""}};
+$("txt").addEventListener("keydown",e=>{if(e.key==="Enter")$("send").click()});
+
+function render(){
+  $("cnt").textContent="("+records.length+"種)";
+  const l=$("list");l.innerHTML="";
+  records.forEach((r,i)=>{const d=document.createElement("div");d.className="rec";
+    const a=document.createElement("div");
+    const t=new Date(r.t);
+    a.innerHTML='<div class="nm"></div><div class="muted"></div>';
+    a.firstChild.textContent=r.n+(r.c>1?" ×"+r.c:"");
+    a.lastChild.textContent=[r.f,r.s,t.toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}),r.lat?r.lat+","+r.lng:""].filter(Boolean).join(" ・ ");
+    if(r.out){const g=document.createElement("span");g.className="tag";g.textContent="リスト外";a.firstChild.appendChild(document.createTextNode(" "));a.firstChild.appendChild(g)}
+    const x=document.createElement("button");x.textContent="✕";x.onclick=()=>{records.splice(i,1);save();render()};
+    d.append(a,x);l.appendChild(d)});
+}
+$("undo").onclick=()=>{records.shift();save();render()};
+$("clr").onclick=()=>{if(confirm("全記録を消去しますか?")){records=[];save();render()}};
+$("exp").onclick=async()=>{
+  const rows=[["記録時刻","種和名","科名","学名","確認回数","リスト外","緯度","経度","認識結果"]].concat([...records].reverse().map(r=>[r.t,r.n,r.f,r.s,r.c,r.out?"○":"",r.lat,r.lng,r.raw]));
+  const tsv=rows.map(r=>r.join("\t")).join("\n");$("out").value=tsv;$("out").select();
+  try{await navigator.clipboard.writeText(tsv);toast("コピーしました。Excelに貼り付けてください")}catch(e){toast("下の枠を長押ししてコピーしてください",true)}
+};
+
+// ---- 植物リスト読込 ----
+$("file").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const buf=await f.arrayBuffer();let wb;
+    if(/\.csv$/i.test(f.name)){let txt;try{txt=new TextDecoder("utf-8",{fatal:true}).decode(buf)}catch(_){txt=new TextDecoder("shift-jis").decode(buf)}wb=XLSX.read(txt,{type:"string"})}
+    else wb=XLSX.read(buf,{type:"array"});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+    const list=rows.filter(r=>r["種和名"]).map(r=>({n:String(r["種和名"]).trim(),f:String(r["科名"]||"").trim(),s:String(r["学名"]||"").trim()}));
+    if(!list.length)throw new Error("「種和名」列が見つかりません");
+    species=list;store.set("fv_species",species.length>20000?null:species);rebuild();toast(list.length+"種を読み込みました")
+  }catch(err){toast("読込失敗: "+err.message,true)}
+};
+
+// ---- 音声認識 ----
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let committed={},silTimer=null;
+const silMs=()=>parseFloat($("silv").value)*1000;
+(()=>{const v=store.get("fv_sil",0.5);$("silv").value=v;$("silLabel").textContent=(+v).toFixed(1);$("silv").oninput=e=>{$("silLabel").textContent=(+e.target.value).toFixed(1);store.set("fv_sil",+e.target.value)};$("sil").checked=store.get("fv_silon",true);$("sil").onchange=e=>store.set("fv_silon",e.target.checked)})();
+$("mic").onclick=()=>{
+  if(!SR){toast("このブラウザは音声認識に未対応です。Chromeで開くか、手入力欄のキーボード音声入力を使ってください",true);return}
+  if(listening){listening=false;recog&&recog.stop();setMic(false);return}
+  const sil=$("sil").checked;recog=new SR();recog.lang="ja-JP";recog.continuous=sil;recog.interimResults=sil;recog.maxAlternatives=5;committed={};clearTimeout(silTimer);
+  recog.onresult=e=>{
+    const idx=e.results.length-1,r=e.results[idx];
+    if(!$("sil").checked){handle([...r].map(a=>a.transcript));return}
+    const cur=r[0].transcript,done=committed[idx]||"";
+    const rest=cur.startsWith(done)?cur.slice(done.length):cur;
+    clearTimeout(silTimer);
+    if(r.isFinal){if(rest.trim()){committed[idx]=cur;handle(done?[rest]:[...r].map(a=>a.transcript))}return}
+    if(!rest.trim())return;
+    $("heard").textContent="聞き取り中: "+toKata(rest);
+    silTimer=setTimeout(()=>{committed[idx]=cur;handle([rest])},silMs());
+  };
+  recog.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){listening=false;setMic(false);toast("マイクが許可されていません。手入力欄のキーボード音声入力を使うか、許可してください",true)}else if(e.error!=="no-speech"&&e.error!=="aborted")toast("認識エラー: "+e.error,true)};
+  recog.onend=()=>{if(listening){try{recog.start()}catch(_){}}};
+  let started=false;recog.onstart=()=>{started=true;toast("聞き取り中です。話してください")};
+  setTimeout(()=>{if(listening&&!started){listening=false;setMic(false);toast("マイクを起動できません(この画面ではマイク使用が制限されている可能性)。下の手入力欄でキーボードの🎤を使うか、Chromeで直接開いてください",true)}},3000);
+  listening=true;setMic(true);try{recog.start()}catch(err){listening=false;setMic(false);toast("起動エラー: "+err.message,true)}
+  getPos(p=>{if(p)lastPos=p});
+};
+function setMic(on){const m=$("mic");m.classList.toggle("on",on);m.textContent=on?"⏹ 聞き取り中(タップで停止)":"🎤 音声入力を開始"}
+rebuild();render();
+</script>
+</body>
+</html>
