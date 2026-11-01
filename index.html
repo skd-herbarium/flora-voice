@@ -84,7 +84,7 @@ textarea{width:100%;height:110px;font:12px monospace;background:var(--bg);color:
 <script>
 const SAMPLE=[["ヒメスギラン","ヒカゲノカズラ","Huperzia miyoshiana"],["コスギラン","ヒカゲノカズラ","Huperzia selago"],["トウゲシバ（広義）","ヒカゲノカズラ","Huperzia serrata"],["オニトウゲシバ","ヒカゲノカズラ","Huperzia serrata var. longipetiolata"],["ホソバトウゲシバ","ヒカゲノカズラ","Huperzia serrata var. serrata"]];
 let species=SAMPLE.map(([n,f,s])=>({n,f,s}));
-let records=[],aliases={},pending=null,lastPos=null,recog=null,listening=false;
+let records=[],aliases={},pending=null,lastPos=null,recog=null,listening=false,speaking=0;
 const $=id=>document.getElementById(id);
 const store={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 records=store.get("fv_rec",[]);aliases=store.get("fv_alias",{});
@@ -94,6 +94,28 @@ const saved=store.get("fv_species",null);if(saved&&saved.length)species=saved;
 function norm(s){return String(s||"").replace(/[（(].*?[）)]/g,"").replace(/[\s　・･.,、。]/g,"").replace(/[\u30A1-\u30F6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).toLowerCase()}
 function lev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let p=Array.from({length:n+1},(_,j)=>j);for(let i=1;i<=m;i++){const c=[i];for(let j=1;j<=n;j++)c[j]=Math.min(p[j]+1,c[j-1]+1,p[j-1]+(a[i-1]===b[j-1]?0:1));p=c}return p[n]}
 function score(q,k){if(!q||!k)return 0;let s=1-lev(q,k)/Math.max(q.length,k.length);if(q.length>=3&&(k.startsWith(q)||q.startsWith(k)))s=Math.max(s,.8);return s}
+const HK=/[\u4e00-\u9fff]/;
+const KJ=new Map();
+"山:やま/さん/ざん,川:かわ/がわ/せん,沢:さわ/ざわ/たく,谷:たに/だに/や,海:うみ/かい,浜:はま/はま,岩:いわ/がん,石:いし/せき,土:つち/ど,水:みず/すい,湿:しめ/しつ,野:の/や,原:はら/ばら/げん,森:もり,林:はやし/りん,田:た/だ,畑:はたけ,島:しま/じま,大:おお/だい/たい,小:こ/お/ちい,中:なか/ちゅう,細:ほそ/さい,太:ふと/た,長:なが/ちょう,短:たん/みじか,丸:まる/がん,広:ひろ/こう,狭:さ/きょう,深:ふか/み,浅:あさ,高:たか/こう,低:ひく/てい,厚:あつ,薄:うす/すすき,白:しろ/はく,黒:くろ/ぐろ,赤:あか/せき,青:あお,黄:き/おう,紫:むらさき/し,紅:べに/こう/くれない,緑:みどり/りょく,金:きん/こがね,銀:ぎん,茶:ちゃ,姫:ひめ,鬼:おに,犬:いぬ,猫:ねこ,狐:きつね,狸:たぬき,熊:くま,鳥:とり/ちょう,鶴:つる,蛇:へび/じゃ,蝶:ちょう,蜂:はち,蟹:かに,猿:さる,馬:うま/ば,牛:うし/ぎゅう,鹿:しか/か,虎:とら,龍:りゅう/たつ,竜:りゅう/たつ,雀:すずめ,鷹:たか,鷺:さぎ,蛙:かえる,蚊:か,蝿:はえ,鯉:こい,花:はな/ばな/か,実:み/じつ,根:ね/こん,茎:くき,蔓:つる/かずら,藤:ふじ,菊:きく,蘭:らん,葉:は/ば/よう,草:くさ/ぐさ/そう,木:き/ぎ/もく,樹:き/じゅ,苔:こけ,藻:も,芝:しば,竹:たけ/だけ,笹:ささ,萩:はぎ,芒:すすき,桜:さくら/ざくら,松:まつ,杉:すぎ,檜:ひのき,桧:ひのき,楢:なら,柏:かしわ,椎:しい,樫:かし,柳:やなぎ,梅:うめ,桃:もも,杏:あんず,李:すもも,梨:なし,柿:かき,栗:くり/ぐり,栃:とち,橡:とち,栂:つが,榧:かや,槙:まき,楓:かえで,椿:つばき,楠:くす/くすのき,樟:くす,榎:えのき,欅:けやき,槻:けやき,椋:むく,朴:ほお/ほう,桂:かつら,桐:きり,漆:うるし,櫨:はぜ,柊:ひいらぎ,榊:さかき,樅:もみ,檀:まゆみ/だん,梓:あずさ,楡:にれ,橘:たちばな,菫:すみれ,蓬:よもぎ,葦:あし,蘆:あし,芦:あし,蒲:がま/かば,菅:すげ,藺:い,茅:かや/ちがや,稲:いね,麦:むぎ,豆:まめ,芋:いも,蕨:わらび,薇:ぜんまい,星:ほし,月:つき,日:ひ/にち,雪:ゆき,雲:くも,風:かぜ,夏:なつ,秋:あき,春:はる,冬:ふゆ,東:ひがし/とう,西:にし/せい,南:みなみ/なん,北:きた/ほく,本:ほん/もと,常:とこ/じょう,唐:から/とう,毛:け,針:はり,刺:とげ/さし,棘:とげ,斑:ふ,糸:いと,輪:わ,車:くるま,玉:たま,珠:たま,筒:つつ,鈴:すず,笠:かさ,傘:かさ,袋:ふくろ,舌:した,耳:みみ,目:め,歯:は,爪:つめ,足:あし,手:て,指:ゆび,髭:ひげ,鬚:ひげ,尾:お,角:つの/かく,羽:は/はね,一:いち/ひと,二:に/ふた,三:さん/み,五:ご,四:し/よ,八:はち/や,十:じゅう,千:せん,万:まん,百合:ゆり,菖蒲:あやめ/しょうぶ,紅葉:もみじ,蒲公英:たんぽぽ,薔薇:ばら,躑躅:つつじ,山茶花:さざんか,杜若:かきつばた,撫子:なでしこ,桔梗:ききょう,女郎花:おみなえし,竜胆:りんどう,蝦夷:えぞ,日本:にほん,深山:みやま,羊歯:しだ,胡桃:くるみ,茱萸:ぐみ,蜜柑:みかん".split(",").forEach(s=>{const[i,r]=s.split(":");KJ.set(i,r.split("/"))});
+function kscore(q,k){
+  const n=q.length,m=k.length,INF=1e9;
+  const dp=Array.from({length:n+1},()=>Array(m+1).fill(INF));dp[0][0]=0;
+  for(let i=0;i<n;i++)for(let j=0;j<=m;j++){
+    const d=dp[i][j];if(d>=INF)continue;
+    const c=q[i];
+    dp[i+1][j]=Math.min(dp[i+1][j],d+1);
+    if(j<m)dp[i][j+1]=Math.min(dp[i][j+1],d+1);
+    if(HK.test(c)){
+      let known=false;
+      for(let L=Math.min(3,n-i);L>=1;L--){const rs=KJ.get(q.substr(i,L));if(!rs)continue;known=true;
+        for(const r of rs)if(k.startsWith(r,j))dp[i+L][j+r.length]=Math.min(dp[i+L][j+r.length],d);
+        for(let l=1;l<=3&&j+l<=m;l++)dp[i+L][j+l]=Math.min(dp[i+L][j+l],d+1.5)}
+      if(!known)for(let l=1;l<=3&&j+l<=m;l++)dp[i+1][j+l]=Math.min(dp[i+1][j+l],d+2);
+    }else if(j<m){dp[i+1][j+1]=Math.min(dp[i+1][j+1],d+(k[j]===c?0:1))}
+  }
+  for(let j=0;j<m;j++)dp[n][j+1]=Math.min(dp[n][j+1],dp[n][j]+1);
+  return Math.max(0,1-dp[n][m]/m);
+}
 function toKata(s){return String(s||"").replace(/[\u3041-\u3096]/g,c=>String.fromCharCode(c.charCodeAt(0)+0x60))}
 let kmap=new Map(),maxL=2;
 function splitAlts(alts){
@@ -115,13 +137,15 @@ function match(alts){
   for(const q of qs){if(aliases[q]){const x=species.find(s=>s.n===aliases[q]);if(x)return{exact:x,list:[]}}}
   for(const q of qs){const x=species.filter(s=>s.k===q);if(x.length===1)return{exact:x[0],list:[]}}
   const best=new Map();
-  for(const sp of species){let sc=0;for(const q of qs)sc=Math.max(sc,score(q,sp.k));if(sc>=.4)best.set(sp,sc)}
-  return{exact:null,list:[...best].sort((a,b)=>b[1]-a[1]).slice(0,5)}
+  for(const sp of species){let sc=0;for(const q of qs)sc=Math.max(sc,score(q,sp.k),HK.test(q)?kscore(q,sp.k):0);if(sc>=.4)best.set(sp,sc)}
+  const L=[...best].sort((a,b)=>b[1]-a[1]).slice(0,5);
+  if(L.length&&L[0][1]>=.999&&(L.length<2||L[1][1]<.999))return{exact:L[0][0],list:[]};
+  return{exact:null,list:L}
 }
 
 // ---- 記録 ----
 function toast(t,warn){const e=$("toast");e.textContent=t;e.style.color=warn?"var(--warn)":"var(--pri)"}
-function say(t){if($("speak").checked&&window.speechSynthesis){try{const u=new SpeechSynthesisUtterance(t);u.lang="ja-JP";speechSynthesis.speak(u)}catch(e){}}}
+function say(t){if($("speak").checked&&window.speechSynthesis){try{const u=new SpeechSynthesisUtterance(t);u.lang="ja-JP";speaking++;if(listening){clearTimeout(silTimer);try{recog.abort()}catch(_){}}const fin=()=>{setTimeout(()=>{speaking=Math.max(0,speaking-1);if(!speaking&&listening){try{recog.start()}catch(_){}}},500)};u.onend=fin;u.onerror=fin;speechSynthesis.speak(u)}catch(e){}}}
 function getPos(cb){if(!navigator.geolocation)return cb(null);navigator.geolocation.getCurrentPosition(p=>cb({lat:p.coords.latitude,lng:p.coords.longitude}),()=>cb(lastPos),{enableHighAccuracy:true,timeout:4000,maximumAge:60000})}
 function add(sp,raw,out,quiet){
   const ex=records.find(r=>!r.out&&!out&&r.n===sp.n);
@@ -133,6 +157,7 @@ function add(sp,raw,out,quiet){
 function save(){store.set("fv_rec",records)}
 function handle(alts){
   alts=alts.filter(Boolean);if(!alts.length)return;
+  if(/(候補を|確認して|該当なし|とうろく|登録|きしゅつ|既出|りすと外|こうほを|かくにんして|がいとうなし)/.test(norm(alts[0])))return;
   $("heard").textContent="認識結果: "+alts.map(toKata).join(" / ");
   if(/^(とりけし|取り消し|取消|取りけし)$/.test(alts[0].replace(/\s/g,""))||norm(alts[0])==="とりけし"){const r=records.shift();save();render();toast(r?"取消: "+r.n:"記録なし",true);say("取り消し");return}
   const names=[],before=queue.length;
@@ -208,6 +233,7 @@ $("mic").onclick=()=>{
   if(listening){listening=false;recog&&recog.stop();setMic(false);return}
   const sil=$("sil").checked;recog=new SR();recog.lang="ja-JP";recog.continuous=sil;recog.interimResults=sil;recog.maxAlternatives=5;committed={};clearTimeout(silTimer);
   recog.onresult=e=>{
+    if(speaking)return;
     const idx=e.results.length-1,r=e.results[idx];
     if(!$("sil").checked){handle([...r].map(a=>a.transcript));return}
     const cur=r[0].transcript,done=committed[idx]||"";
@@ -219,8 +245,8 @@ $("mic").onclick=()=>{
     silTimer=setTimeout(()=>{committed[idx]=cur;handle([rest])},silMs());
   };
   recog.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){listening=false;setMic(false);toast("マイクが許可されていません。手入力欄のキーボード音声入力を使うか、許可してください",true)}else if(e.error!=="no-speech"&&e.error!=="aborted")toast("認識エラー: "+e.error,true)};
-  recog.onend=()=>{if(listening){try{recog.start()}catch(_){}}};
-  let started=false;recog.onstart=()=>{started=true;toast("聞き取り中です。話してください")};
+  recog.onend=()=>{if(listening&&!speaking){try{recog.start()}catch(_){}}};
+  let started=false;recog.onstart=()=>{started=true;committed={};toast("聞き取り中です。話してください")};
   setTimeout(()=>{if(listening&&!started){listening=false;setMic(false);toast("マイクを起動できません(この画面ではマイク使用が制限されている可能性)。下の手入力欄でキーボードの🎤を使うか、Chromeで直接開いてください",true)}},3000);
   listening=true;setMic(true);try{recog.start()}catch(err){listening=false;setMic(false);toast("起動エラー: "+err.message,true)}
   getPos(p=>{if(p)lastPos=p});
